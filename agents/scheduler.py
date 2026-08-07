@@ -137,23 +137,5 @@ Good Luck 🚀
     print("✅ Email sent successfully.")
 
 
-scheduler = BackgroundScheduler()
-
-# Test every 5 minutes
-scheduler.add_job(
-    daily_job_search,
-    trigger="interval",
-    minutes=5,
-    max_instances=1
-)
-
-# For production use this instead:
-# scheduler.add_job(
-#     daily_job_search,
-#     trigger="cron",
-#     hour=8,
-#     minute=0,
-#     max_instances=1
-# )
-
-scheduler.start()
+if __name__ == "__main__":
+    daily_job_search()
