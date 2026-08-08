@@ -1,115 +1,203 @@
+import datetime
 
-import streamlit as st
-from profile_agent import extract_resume_text
-from utils.skill_extractor import extract_skills, get_target_roles
-from Database.supabase_service import update_profile
-from agents.scheduler import scheduler
-from utils.experience_extractor import extract_current_experience
-from agents.scheduler import scheduler
-
-st.set_page_config(
-    page_title="AI Career Agent",
-    page_icon="🤖",
-    layout="wide"
+from agents.job_agent import search_jobs
+from Database.supabase_service import (
+    get_profiles,
+    job_exists,
+    save_job
 )
+from agents.email_sender import send_email
 
-# ===========================
-# Header
-# ===========================
-st.title("🤖 AI Career Agent")
-st.markdown(
-    """
-Welcome to your **AI Career Assistant**.
 
-This application helps you:
+MAX_DAILY_JOBS = 50
 
-- 📄 Analyze your resume
-- 🧠 Extract your technical skills
-- 🎯 Recommend career roles
-- 💼 Find matching jobs
-- 👥 Discover recruiters
-- 📊 Track applications
-- 📈 Monitor your job search progress
+
+def daily_job_search():
+
+    print("=" * 60)
+    print("Running Daily Job Search")
+    print(datetime.datetime.now())
+    print("=" * 60)
+
+    response = get_profiles()
+
+    if not response.data:
+        print("No profile found.")
+        return
+
+    profile = response.data[0]
+
+    roles = [
+        r.strip()
+        for r in profile["roles"].split(",")
+        if r.strip()
+    ]
+
+    experience = profile.get("experience") or 0
+
+    total_jobs_checked = 0
+    saved_jobs = 0
+
+    email_jobs = []
+
+    for role in roles:
+
+        # Stop once 50 NEW jobs are saved
+        if saved_jobs >= MAX_DAILY_JOBS:
+            break
+
+        print(f"\nSearching {role}...")
+
+        try:
+            jobs = search_jobs(
+                role=role,
+                experience=experience,
+                results=20
+            )
+
+        except Exception as e:
+            print(f"Error searching {role}: {e}")
+            continue
+
+        total_jobs_checked += len(jobs)
+
+        print(f"Found {len(jobs)} jobs for {role}")
+
+        for job in jobs:
+
+            # Stop at 50 new jobs
+            if saved_jobs >= MAX_DAILY_JOBS:
+                break
+
+            job_id = str(job.get("id", ""))
+
+            if not job_id:
+                continue
+
+            # Skip jobs already stored in Supabase
+            if job_exists(job_id):
+                continue
+
+            title = job.get("title", "")
+
+            company = job.get(
+                "company", {}
+            ).get(
+                "display_name", ""
+            )
+
+            location = job.get(
+                "location", {}
+            ).get(
+                "display_name", ""
+            )
+
+            url = job.get(
+                "redirect_url", ""
+            )
+
+            description = job.get(
+                "description", ""
+            )
+
+            # Save new job
+            save_job(
+                job_id=job_id,
+                title=title,
+                company=company,
+                location=location,
+                url=url,
+                role=role,
+                score=0,
+                description=description,
+                source="Adzuna"
+            )
+
+            saved_jobs += 1
+
+            # Add job to email
+            email_jobs.append(
+                {
+                    "role": role,
+                    "title": title,
+                    "company": company,
+                    "location": location,
+                    "url": url
+                }
+            )
+
+        print(f"{len(jobs)} jobs checked")
+
+    # --------------------------------
+    # SUMMARY
+    # --------------------------------
+
+    print("=" * 60)
+    print(f"Jobs Checked : {total_jobs_checked}")
+    print(f"New Jobs     : {saved_jobs}")
+    print("=" * 60)
+
+    # --------------------------------
+    # SEND ONE DAILY EMAIL
+    # --------------------------------
+
+    if not email_jobs:
+
+        print("No new jobs today.")
+        return
+
+    email_body = f"""
+Hello Jaya,
+
+Your AI Career Agent found {saved_jobs} NEW jobs today.
+
+Jobs Checked: {total_jobs_checked}
+New Jobs: {saved_jobs}
+
+============================================================
+
 """
-)
 
-st.divider()
+    for index, job in enumerate(email_jobs, start=1):
 
-# ===========================
-# Upload Resume
-# ===========================
-st.header("📄 Upload Your Resume")
+        email_body += f"""
+{index}. {job['title']}
 
-uploaded_file = st.file_uploader(
-    "Choose a PDF Resume",
-    type=["pdf"]
-)
+Role: {job['role']}
+Company: {job['company']}
+Location: {job['location']}
+Apply: {job['url']}
 
-if uploaded_file:
+------------------------------------------------------------
+"""
 
-    with st.spinner("Analyzing Resume..."):
+    email_body += """
 
-        text = extract_resume_text(uploaded_file)
-        #experience = extract_current_experience(text)
-        experience = 2
-        st.success(f"Experience: {experience} Years")
+Open your Career Agent and start applying!
 
-        st.subheader("Experience")
-        st.success(f"{experience} Years")
-        skills = extract_skills(text)
+Good Luck 🚀
+"""
 
-        roles = get_target_roles(skills)
+    subject = f"🎯 {saved_jobs} New Jobs Found Today"
 
-    st.success("✅ Resume analyzed successfully!")
+    try:
 
-    # Resume Preview
-    with st.expander("📃 Resume Preview"):
-        st.text_area(
-            "Resume Content",
-            text,
-            height=250
+        send_email(
+            subject=subject,
+            body=email_body,
+            receiver="mishra.jaya.1003@gmail.com"
         )
 
-    # Skills
-    st.subheader("🧠 Detected Skills")
+        print("✅ Daily reminder email sent successfully.")
 
-    if skills:
-        st.write(skills)
-    else:
-        st.warning("No skills detected.")
+    except Exception as e:
 
-    # Roles
-    st.subheader("🎯 Recommended Roles")
+        print(f"❌ Email Error: {e}")
 
-    if roles:
-        st.write(roles)
-    else:
-        st.warning("No matching roles found.")
 
-    st.divider()
+# --------------------------------
+# RUN WHEN CALLED BY GITHUB ACTIONS
+# --------------------------------
 
-    # Save Profile
-    if st.button("💾 Save / Update Profile", use_container_width=True):
-
-       
-        update_profile("Jaya Mishra", skills, roles, experience)
-
-        st.success("✅ Profile updated successfully!")
-
-        st.balloons()
-
-# ===========================
-# Footer
-# ===========================
-st.divider()
-
-st.info(
-    """
-### 🚀 Next Steps
-
-1. Open **Dashboard** to view your career overview.
-2. Visit **Daily Jobs** for personalized job recommendations.
-3. Track your applications in **Applications**.
-4. Explore recruiters and companies.
-"""
-)
+if __name__ == "__main__":
+    daily_job_search()
