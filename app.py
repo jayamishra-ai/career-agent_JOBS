@@ -1,203 +1,41 @@
-import datetime
+import streamlit as st
 
-from agents.job_agent import search_jobs
-from Database.supabase_service import (
-    get_profiles,
-    job_exists,
-    save_job
+st.set_page_config(
+    page_title="AI Career Agent",
+    page_icon="💼",
+    layout="wide"
 )
-from agents.email_sender import send_email
 
+st.title("💼 AI Career Agent")
 
-MAX_DAILY_JOBS = 50
+st.write("Welcome to your AI-powered Career Agent.")
 
+st.divider()
 
-def daily_job_search():
+col1, col2, col3 = st.columns(3)
 
-    print("=" * 60)
-    print("Running Daily Job Search")
-    print(datetime.datetime.now())
-    print("=" * 60)
+with col1:
+    st.metric("💼 Daily Jobs", "50")
 
-    response = get_profiles()
+with col2:
+    st.metric("📅 Job Search", "Daily")
 
-    if not response.data:
-        print("No profile found.")
-        return
+with col3:
+    st.metric("📧 Reminder", "Email")
 
-    profile = response.data[0]
+st.divider()
 
-    roles = [
-        r.strip()
-        for r in profile["roles"].split(",")
-        if r.strip()
-    ]
+st.subheader("🚀 Career Agent")
 
-    experience = profile.get("experience") or 0
+st.write("""
+Your Career Agent helps you find and apply for relevant opportunities.
+""")
 
-    total_jobs_checked = 0
-    saved_jobs = 0
+st.success("✅ Career Agent is running successfully!")
 
-    email_jobs = []
+st.info("""
+📧 **Daily Reminder**
 
-    for role in roles:
-
-        # Stop once 50 NEW jobs are saved
-        if saved_jobs >= MAX_DAILY_JOBS:
-            break
-
-        print(f"\nSearching {role}...")
-
-        try:
-            jobs = search_jobs(
-                role=role,
-                experience=experience,
-                results=20
-            )
-
-        except Exception as e:
-            print(f"Error searching {role}: {e}")
-            continue
-
-        total_jobs_checked += len(jobs)
-
-        print(f"Found {len(jobs)} jobs for {role}")
-
-        for job in jobs:
-
-            # Stop at 50 new jobs
-            if saved_jobs >= MAX_DAILY_JOBS:
-                break
-
-            job_id = str(job.get("id", ""))
-
-            if not job_id:
-                continue
-
-            # Skip jobs already stored in Supabase
-            if job_exists(job_id):
-                continue
-
-            title = job.get("title", "")
-
-            company = job.get(
-                "company", {}
-            ).get(
-                "display_name", ""
-            )
-
-            location = job.get(
-                "location", {}
-            ).get(
-                "display_name", ""
-            )
-
-            url = job.get(
-                "redirect_url", ""
-            )
-
-            description = job.get(
-                "description", ""
-            )
-
-            # Save new job
-            save_job(
-                job_id=job_id,
-                title=title,
-                company=company,
-                location=location,
-                url=url,
-                role=role,
-                score=0,
-                description=description,
-                source="Adzuna"
-            )
-
-            saved_jobs += 1
-
-            # Add job to email
-            email_jobs.append(
-                {
-                    "role": role,
-                    "title": title,
-                    "company": company,
-                    "location": location,
-                    "url": url
-                }
-            )
-
-        print(f"{len(jobs)} jobs checked")
-
-    # --------------------------------
-    # SUMMARY
-    # --------------------------------
-
-    print("=" * 60)
-    print(f"Jobs Checked : {total_jobs_checked}")
-    print(f"New Jobs     : {saved_jobs}")
-    print("=" * 60)
-
-    # --------------------------------
-    # SEND ONE DAILY EMAIL
-    # --------------------------------
-
-    if not email_jobs:
-
-        print("No new jobs today.")
-        return
-
-    email_body = f"""
-Hello Jaya,
-
-Your AI Career Agent found {saved_jobs} NEW jobs today.
-
-Jobs Checked: {total_jobs_checked}
-New Jobs: {saved_jobs}
-
-============================================================
-
-"""
-
-    for index, job in enumerate(email_jobs, start=1):
-
-        email_body += f"""
-{index}. {job['title']}
-
-Role: {job['role']}
-Company: {job['company']}
-Location: {job['location']}
-Apply: {job['url']}
-
-------------------------------------------------------------
-"""
-
-    email_body += """
-
-Open your Career Agent and start applying!
-
-Good Luck 🚀
-"""
-
-    subject = f"🎯 {saved_jobs} New Jobs Found Today"
-
-    try:
-
-        send_email(
-            subject=subject,
-            body=email_body,
-            receiver="mishra.jaya.1003@gmail.com"
-        )
-
-        print("✅ Daily reminder email sent successfully.")
-
-    except Exception as e:
-
-        print(f"❌ Email Error: {e}")
-
-
-# --------------------------------
-# RUN WHEN CALLED BY GITHUB ACTIONS
-# --------------------------------
-
-if __name__ == "__main__":
-    daily_job_search()
+Your GitHub Actions workflow searches for new jobs once a day
+and sends the new-job list to your email.
+""")
